@@ -1,0 +1,19 @@
+SYSTEM / INTRO (paste this at the top of your new chat):
+I’m running a Linux dev server (Ubuntu/Debian-based) with Docker and Docker Compose already working.
+I have the full finance-index-dashboard project that includes:
+docker-compose.yml with Postgres, FastAPI backend, Alembic migrations, ETL job, and Next.js frontend.
+A .env file with DATABASE_URL, FINNHUB_API_KEY, and NEXT_PUBLIC_API_URL.
+My goal is to:
+Deploy and run everything locally on the Linux server using docker compose up --build.
+SSH tunnel ports (8000, 3000) so I can access the FastAPI and Next.js apps remotely.
+Manage migrations and ETL runs easily from the command line.
+Eventually connect this stack to GCP Cloud SQL and Cloud Run for production deployment.
+Ignore all previous Mac/Colima/Podman instructions.
+I want your help acting as my DevOps + backend assistant to:
+Confirm how to start, stop, and rebuild the stack cleanly on Linux.
+Show how to run migrations and ETL jobs on-demand.
+Generate a Makefile for quick commands (make up, make down, make etl, make migrate, etc.).
+Help with SSH port forwarding and testing endpoints remotely.
+Later: adapt this same Compose setup for Cloud Run deployment.
+Initial request:
+“Start by giving me the exact Linux command sequence to bring up the full stack, verify it’s healthy, run an ETL pass, and confirm the frontend and backend endpoints are reachable over SSH tunneling.”
