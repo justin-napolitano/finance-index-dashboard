@@ -1,0 +1,60 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16
+    container_name: finance-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: finance
+    volumes:
+      - ./db/data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  migrations:
+    build: ./backend
+    image: finance-backend
+    container_name: finance-migrations
+    depends_on:
+      - db
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/finance
+    command: ["alembic", "-c", "app/migrations/alembic.ini", "upgrade", "head"]
+
+  backend:
+    build: ./backend
+    image: finance-backend
+    container_name: finance-backend
+    depends_on:
+      - db
+      - migrations
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/finance
+    volumes:
+      - ./backend/app:/app/app
+    ports:
+      - "8000:8000"
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  etljob:
+    build: ./backend
+    image: finance-etljob
+    container_name: finance-etljob
+    depends_on:
+      - db
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/finance
+    command: ["python", "app/etl/run_etl.py"]
+
+  frontend:
+    build: ./frontend
+    image: finance-frontend
+    container_name: finance-frontend
+    depends_on:
+      - backend
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
