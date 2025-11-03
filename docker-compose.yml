@@ -1,5 +1,4 @@
-version: "3.9"
-
+# docker-compose.yml  (compose v2+ — no top-level "version" key)
 services:
   db:
     image: postgres:16
@@ -12,49 +11,87 @@ services:
       - ./db/data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
 
   migrations:
     build: ./backend
     image: finance-backend
     container_name: finance-migrations
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     environment:
+      PYTHONPATH: /app
       DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/finance
     command: ["alembic", "-c", "app/migrations/alembic.ini", "upgrade", "head"]
+    restart: "no"
 
   backend:
     build: ./backend
     image: finance-backend
     container_name: finance-backend
     depends_on:
-      - db
-      - migrations
+      db:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
     environment:
+      PYTHONPATH: /app
       DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/finance
     volumes:
-      - ./backend/app:/app/app
+      - ./backend/app:/app/app   # hot-reload code locally
     ports:
       - "8000:8000"
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    restart: unless-stopped
 
   etljob:
-    build: ./backend
+    build: ./backend          # if ETL has its own Dockerfile, change to ./etl
     image: finance-etljob
     container_name: finance-etljob
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
     environment:
+      PYTHONPATH: /app
       DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/finance
-    command: ["python", "app/etl/run_etl.py"]
+      FINNHUB_API_KEY: ${FINNHUB_API_KEY}
+      CURL_CA_BUNDLE: /usr/local/lib/python3.11/site-packages/certifi/cacert.pem
+      SSL_CERT_FILE: /usr/local/lib/python3.11/site-packages/certifi/cacert.pem
+      REQUESTS_CA_BUNDLE: /usr/local/lib/python3.11/site-packages/certifi/cacert.pem
+      YFINANCE_USE_CURL: "true"
+      # point requests/OpenSSL to certifi’s CA bundle
+      #SSL_CERT_FILE: /usr/local/lib/python3.11/site-packages/certifi/cacert.pem
+      #REQUESTS_CA_BUNDLE: /usr/local/lib/python3.11/site-packages/certifi/cacert.pem
+       # --- throttle knobs ---
+      YF_MAX_BATCH: "25"         # try 10–30; smaller = safer
+      YF_SLEEP_SEC: "1.5"        # 1.0–2.0 is typical
+      YF_MAX_RETRIES: "6"
+      YF_BACKOFF_FACTOR: "1.5"
+      YF_ADAPTIVE_SLOWSEC: "6.0"
+      YF_THREADS: "false"        # keep false to avoid Yahoo ban hammer
+      YF_PERIOD_DAYS: "540"      # initial backfill window if DB empty
+      TICKERS_FILE: /app/app/etl/tickers.yaml
+    command: ["python", "app/etl/run_etl.py"]   # adjust to your ETL entrypoint
+    restart: "no"
 
   frontend:
     build: ./frontend
     image: finance-frontend
     container_name: finance-frontend
     depends_on:
-      - backend
+      backend:
+        condition: service_started
     environment:
+      # Browser will hit the tunneled backend
       NEXT_PUBLIC_API_URL: http://localhost:8000
     ports:
       - "3000:3000"
+    restart: unless-stopped
+

@@ -1,0 +1,156 @@
+SYSTEM / INTRO:
+I’m running a Linux dev server (Ubuntu/Debian-based) with Docker and Docker Compose already working.
+I have the full finance-index-dashboard project that includes:
+- docker-compose.yml with Postgres, FastAPI backend, Alembic migrations, ETL job, and Next.js frontend.
+- A .env file with DATABASE_URL and NEXT_PUBLIC_API_URL.
+Goal:
+Deploy and run everything locally on Linux using docker compose up --build, manage migrations/ETL easily, and eventually connect to Cloud Run / GCP Cloud SQL.
+Assistant should act as my DevOps + backend assistant.
+
+PROJECT STATUS:
+- Backend, DB, and migrations work.
+- Using yfinance (not Finnhub) for ETL.
+- Using SQLAlchemy 2.x, psycopg[binary], Alembic.
+- Postgres tables: tickers, prices, signals, index_definitions, index_constituents, index_history.
+- ETL pipeline: fetch prices (yfinance) → compute signals → reconstitute/rebalance indices.
+- Compose stack runs 5 services: db, migrations, backend, etljob, frontend.
+
+CURRENT WORKING CONFIGS (known good):
+
+--- docker-compose.yml ---
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: finance
+    volumes:
+      - ./db/data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  migrations:
+    build: ./backend
+    image: finance-backend
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PYTHONPATH: /app
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/finance
+    command: ["alembic", "-c", "app/migrations/alembic.ini", "upgrade", "head"]
+    restart: "no"
+
+  backend:
+    build: ./backend
+    image: finance-backend
+    depends_on:
+      db:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+    environment:
+      PYTHONPATH: /app
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/finance
+    volumes:
+      - ./backend/app:/app/app
+    ports:
+      - "8000:8000"
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  etljob:
+    build: ./backend
+    image: finance-etljob
+    depends_on:
+      db:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+    environment:
+      PYTHONPATH: /app
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/finance
+      YFINANCE_USE_CURL: "false"
+      SSL_CERT_FILE: /usr/local/lib/python3.11/site-packages/certifi/cacert.pem
+      REQUESTS_CA_BUNDLE: /usr/local/lib/python3.11/site-packages/certifi/cacert.pem
+    command: ["python", "-m", "app.etl.run_etl"]
+    restart: "no"
+
+  frontend:
+    build: ./frontend
+    image: finance-frontend
+    depends_on:
+      backend:
+        condition: service_started
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+
+--- backend/Dockerfile ---
+FROM python:3.11-slim
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PYTHONPATH=/app
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential ca-certificates curl && update-ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir certifi yfinance pandas SQLAlchemy psycopg[binary] alembic
+COPY app ./app
+
+--- backend/requirements.txt ---
+fastapi
+uvicorn[standard]
+pandas>=2.2
+yfinance>=0.2.44
+SQLAlchemy>=2.0
+psycopg[binary]>=3.2
+alembic
+certifi
+requests
+
+--- backend/app/models/db.py ---
+from sqlalchemy import create_engine
+import os
+DATABASE_URL = os.environ["DATABASE_URL"]
+engine = create_engine(DATABASE_URL, pool_pre_ping=True, future=True)
+
+--- backend/app/etl/run_etl.py ---
+(imports env vars, runs fetch_prices, compute_all_signals, reconstitute_and_rebalance)
+✅ confirmed working pattern:
+import os; set YFINANCE_USE_CURL=false and SSL_CERT_FILE/REQUESTS_CA_BUNDLE to certifi path before imports
+then call fetch_prices(), compute_all_signals(), reconstitute_and_rebalance(asof=date.today())
+
+--- backend/app/etl/fetch_data.py ---
+uses yfinance with custom requests session (User-Agent spoof + retry adapter)
+writes tickers and prices to DB via engine.begin()
+handles empty payloads gracefully
+chunked downloads to avoid rate limiting
+commits upserts with ON CONFLICT (ticker,date)
+
+--- backend/app/etl/rebalance_indices.py ---
+uses psycopg.types.json.Json() for rules insert
+calculates equal weights from top signals (m_score)
+computes daily return & index level, inserts into index_history
+
+--- backend/app/migrations/... ---
+standard Alembic env + initial schema migration defining tickers, prices, signals, index_definitions, index_constituents, index_history.
+
+--- notes / fixes ---
+- pass SQLAlchemy conn to pd.read_sql_query, not conn.connection
+- JSON inserts require psycopg.types.json.Json
+- disable yfinance curl backend via env + certifi path
+- ETL logs rate limit (429) → handled by retry adapter + chunking
+- Compose env ensures YFINANCE_USE_CURL=false and SSL_CERT_FILE/REQUESTS_CA_BUNDLE set
+- frontend uses NEXT_PUBLIC_API_URL=http://localhost:8000 and works via SSH tunnel.
+
+Makefile shortcuts:
+up/down/logs/etl/psql targets using docker compose.
+
+

@@ -1,0 +1,92 @@
+import os
+os.environ.setdefault("YFINANCE_USE_CURL", "false")
+
+import time
+import pandas as pd
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+import yfinance as yf
+import yfinance.shared as yfs
+from sqlalchemy import text
+from app.models.db import engine
+
+# --- resilient session ---
+_s = requests.Session()
+_s.headers.update({
+    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                  "(KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+    "Accept": "*/*",
+})
+_retry = Retry(total=6, backoff_factor=1.5,
+               status_forcelist=[429,500,502,503,504],
+               allowed_methods=["GET"], respect_retry_after_header=True)
+_adapter = HTTPAdapter(max_retries=_retry)
+_s.mount("https://", _adapter)
+yfs._requests = _s
+try:
+    yfs._session = _s
+except Exception:
+    pass
+
+UNIVERSE = ["AAPL","MSFT","NVDA","AMZN","GOOGL","META","AVGO","TSLA","BRK-B","AMD"]
+
+def upsert_tickers():
+    rows = [{"t": t, "n": t, "s": None, "e": None} for t in UNIVERSE]
+    sql = text("""
+        INSERT INTO tickers(ticker, name, sector, exchange)
+        VALUES(:t, :n, :s, :e)
+        ON CONFLICT (ticker) DO NOTHING
+    """)
+    with engine.begin() as conn:
+        conn.execute(sql, rows)
+
+def batched(iterable, n):
+    for i in range(0, len(iterable), n):
+        yield iterable[i:i+n]
+
+def fetch_prices(days: int = 400):
+    upsert_tickers()
+    frames = []
+    for chunk in batched(UNIVERSE, 3):
+        df = yf.download(" ".join(chunk), period=f"{days}d",
+                         auto_adjust=True, group_by="ticker",
+                         progress=False, threads=False)
+        if isinstance(df.columns, pd.MultiIndex):
+            for t in chunk:
+                if t in df.columns.get_level_values(0):
+                    sub = df[t][["Close","Volume"]].dropna()
+                    if sub.empty:
+                        continue
+                    sub = sub.rename(columns={"Close":"close","Volume":"volume"})
+                    sub["ticker"] = t
+                    frames.append(sub)
+        time.sleep(1.5)
+
+    if not frames:
+        print("⚠️ No data returned from yfinance.")
+        return
+
+    prices = (pd.concat(frames)
+              .reset_index()
+              .rename(columns={"Date":"date"}))
+    prices["date"] = pd.to_datetime(prices["date"]).dt.date
+    prices["close"] = prices["close"].astype(float)
+    prices["volume"] = prices["volume"].astype("int64")
+
+    payload = prices[["ticker","date","close","volume"]].to_dict(orient="records")
+    if not payload:
+        print("⚠️ Empty payload.")
+        return
+
+    sql = text("""
+        INSERT INTO prices(ticker, date, close, volume)
+        VALUES(:ticker, :date, :close, :volume)
+        ON CONFLICT (ticker, date) DO UPDATE
+          SET close=EXCLUDED.close, volume=EXCLUDED.volume
+    """)
+    with engine.begin() as conn:
+        conn.execute(sql, payload)
+
+    print(f"✅ Upserted {len(payload)} price rows.")
+

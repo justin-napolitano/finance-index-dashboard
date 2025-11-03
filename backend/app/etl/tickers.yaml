@@ -1,0 +1,22 @@
+# backend/app/etl/tickers.yaml
+# you can keep it flat...
+tickers:
+  - AAPL
+  - MSFT
+  - NVDA
+  - AMZN
+  - META
+  - GOOGL
+  - TSLA
+  - JPM
+  - V
+  - UNH
+
+# ...or use groups:
+# groups:
+#   tech: [AAPL, MSFT, NVDA, META, GOOGL, TSLA]
+#   finance: [JPM, V]
+#   health: [UNH]
+# include: [tech, finance, health]
+# exclude: []
+

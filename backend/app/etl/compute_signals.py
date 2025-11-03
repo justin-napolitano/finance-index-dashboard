@@ -16,7 +16,9 @@ def compute_all_signals():
     with engine.begin() as conn:
         tickers = [r[0] for r in conn.execute(text("SELECT ticker FROM tickers"))]
         for t in tickers:
-            df = pd.read_sql_query(text("SELECT date, close, volume FROM prices WHERE ticker=:t ORDER BY date"), conn.connection, params={"t": t})
+            #df = pd.read_sql_query(text("SELECT date, close, volume FROM prices WHERE ticker=:t ORDER BY date"), conn.connection, params={"t": t})
+            df = pd.read_sql_query(text("SELECT date, close, volume FROM prices WHERE ticker=:t ORDER BY date"),
+                       conn, params={"t": t})
             if df.empty or len(df) < 60:
                 continue
             df['ret'] = df['close'].pct_change()

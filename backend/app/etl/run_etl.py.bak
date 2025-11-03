@@ -1,15 +1,11 @@
-# backend/app/etl/run_etl.py
 import os
+#os.environ["YFINANCE_USE_CURL"] = "false"
 os.environ.setdefault("SSL_CERT_FILE", "/usr/local/lib/python3.11/site-packages/certifi/cacert.pem")
 os.environ.setdefault("REQUESTS_CA_BUNDLE", "/usr/local/lib/python3.11/site-packages/certifi/cacert.pem")
 
 import sys, argparse, logging, traceback
 from datetime import date
-from typing import List, Optional
-
-from sqlalchemy import create_engine, text
-
-from app.etl.tickers_loader import load_tickers as load_tickers_file
+from app.etl.tickers_loader import load_tickers
 from app.etl.fetch_data import fetch_prices
 from app.etl.compute_signals import compute_all_signals
 from app.etl.rebalance_indices import reconstitute_and_rebalance
@@ -18,45 +14,34 @@ log = logging.getLogger("etl")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log.info("YFINANCE_USE_CURL=%s", os.getenv("YFINANCE_USE_CURL"))
 
-def load_tickers_from_db(db_url: str, limit: Optional[int] = None) -> List[str]:
-    eng = create_engine(db_url, future=True)
-    sql = "SELECT ticker FROM tickers ORDER BY ticker"
-    if limit:
-        sql += " LIMIT :limit"
-    with eng.begin() as conn:
-        rows = conn.execute(text(sql), {"limit": limit} if limit else {}).scalars().all()
-    return rows
-
 def parse_args():
     p = argparse.ArgumentParser(description="Run ETL pipeline")
-    p.add_argument("--tickers-file", default=None, help="Optional override: path to .txt/.csv/.yaml")
-    p.add_argument("--limit", type=int, default=None, help="Limit number of tickers (DB path)")
+    p.add_argument("--tickers-file", default=os.getenv("TICKERS_FILE", "").strip(),
+                   help="Path to tickers file (.txt/.csv/.yaml)")
     p.add_argument("--skip-prices", action="store_true")
     p.add_argument("--skip-signals", action="store_true")
     p.add_argument("--skip-rebalance", action="store_true")
+    p.add_argument("--universe", default=None, help="match tickers.universe (text[])")
+    p.add_argument("--limit", type=int, default=None)
+    p.add_argument("--tickers-file", default=None)  # optional fallback
     p.add_argument("--db-url", default=os.getenv("DATABASE_URL", "postgresql+psycopg://postgres:postgres@db:5432/finance"))
     return p.parse_args()
 
 def main():
     args = parse_args()
     ok = True
+    tickers = []
+   
 
-    # --- DB-first ticker load, file optional override ---
-    try:
-        if args.tickers_file:
-            tickers = load_tickers_file(args.tickers_file)
-            log.info("Loaded %d tickers from file: %s", len(tickers), args.tickers_file)
-        else:
-            tickers = load_tickers_from_db(args.db_url, args.limit)
-            log.info("Loaded %d tickers from DB", len(tickers))
-        if not tickers:
-            raise RuntimeError("No tickers found (DB or file).")
-    except Exception as e:
-        log.error("Ticker load failed: %s", e)
-        return sys.exit(1)
+    if args.tickers_file:
+        try:
+            tickers = load_tickers(args.tickers_file)
+            log.info("Loaded %d tickers from %s", len(tickers), args.tickers_file)
+        except Exception as e:
+            log.error("Failed to load tickers: %s", e)
+            ok = False
 
-    # --- PRICES ---
-    if not args.skip_prices:
+    if ok and not args.skip_prices:
         try:
             fetch_prices(tickers)
         except Exception as e:
@@ -64,7 +49,6 @@ def main():
             log.error("fetch_prices failed: %s", e)
             traceback.print_exc()
 
-    # --- SIGNALS ---
     if ok and not args.skip_signals:
         try:
             compute_all_signals()
@@ -73,7 +57,6 @@ def main():
             log.error("compute_all_signals failed: %s", e)
             traceback.print_exc()
 
-    # --- REBALANCE ---
     if ok and not args.skip_rebalance:
         try:
             reconstitute_and_rebalance(asof=date.today())
@@ -85,7 +68,6 @@ def main():
     if not ok:
         log.error("ETL FAILED")
         sys.exit(1)
-
     log.info("✅ ETL complete")
 
 if __name__ == "__main__":

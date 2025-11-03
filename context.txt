@@ -1,19 +1,160 @@
-SYSTEM / INTRO (paste this at the top of your new chat):
-I’m running a Linux dev server (Ubuntu/Debian-based) with Docker and Docker Compose already working.
-I have the full finance-index-dashboard project that includes:
-docker-compose.yml with Postgres, FastAPI backend, Alembic migrations, ETL job, and Next.js frontend.
-A .env file with DATABASE_URL, FINNHUB_API_KEY, and NEXT_PUBLIC_API_URL.
-My goal is to:
-Deploy and run everything locally on the Linux server using docker compose up --build.
-SSH tunnel ports (8000, 3000) so I can access the FastAPI and Next.js apps remotely.
-Manage migrations and ETL runs easily from the command line.
-Eventually connect this stack to GCP Cloud SQL and Cloud Run for production deployment.
-Ignore all previous Mac/Colima/Podman instructions.
-I want your help acting as my DevOps + backend assistant to:
-Confirm how to start, stop, and rebuild the stack cleanly on Linux.
-Show how to run migrations and ETL jobs on-demand.
-Generate a Makefile for quick commands (make up, make down, make etl, make migrate, etc.).
-Help with SSH port forwarding and testing endpoints remotely.
-Later: adapt this same Compose setup for Cloud Run deployment.
-Initial request:
-“Start by giving me the exact Linux command sequence to bring up the full stack, verify it’s healthy, run an ETL pass, and confirm the frontend and backend endpoints are reachable over SSH tunneling.”
+s
+FINANCE-INDEX DASHBOARD — NEXT PHASE INSTRUCTION SET (EXPORT)
+=================================================================
+Goal: Build custom indices/“ETFs” from the working ETL + DB.
+
+──────────────────────────────── SETUP SNAPSHOT ────────────────────────────────
+Stack (compose):
+- Services: db (Postgres 16), migrations (Alembic), backend (FastAPI), etljob, frontend (Next.js)
+- DB URL: postgresql+psycopg://postgres:postgres@db:5432/finance
+- Frontend API URL: http://<server_ip>:3000
+- Ports: 3000 exposed publicly (use SSH tunnel if desired)
+
+Key ENV for ETL:
+- SSL_CERT_FILE, REQUESTS_CA_BUNDLE → certifi path
+- YFINANCE_USE_CURL=true (working), but DO NOT pass session= to yfinance
+
+────────────────────────────── DB & SCHEMA (CURRENT) ───────────────────────────
+Tables (confirmed):
+- tickers(ticker PRIMARY KEY [, is_active bool, universe text[] — optional])
+- prices(ticker, date, open, high, low, close, volume; PK (ticker,date))
+- signals(ticker, date, … m_score, momentum, etc.)    # computed
+- index_definitions(id SERIAL PK, slug TEXT UNIQUE, name, description, rules JSONB, rebalance_freq, reconst_freq)
+- index_history(index_id INT, date DATE, level NUMERIC, ret_daily NUMERIC; PK(index_id, date))
+
+Notes:
+- index_history is index-level only (no per-constituent rows).
+- PK on prices already exists as pk_prices(ticker,date).
+- OHLCV present; close is NUMERIC(12,4) from legacy, open/high/low are DOUBLE PRECISION; volume BIGINT.
+
+──────────────────────────── RECENT HARDENINGS (ETL) ───────────────────────────
+1) yfinance: removed custom session; use default curl backend. End date may be in future; filter NaNs post-stack.
+2) Robust tidy for MultiIndex:
+   - Detect (field,ticker) vs (ticker,field); swap as needed.
+   - Stack to long; only drop rows where BOTH close and volume are NULL.
+3) Ticker upsert:
+   - Use ARRAY(VARCHAR) bindparam (SQLAlchemy 2.x, psycopg3).
+     SQL:  INSERT INTO tickers(ticker) SELECT UNNEST(:tickers) ON CONFLICT DO NOTHING
+4) Alembic:
+   - Minimal migration added open/high/low only; no PK touch; down_revision set to 20251030_init.
+5) Ticker sourcing:
+   - app/etl/tickers_sources.py scrapes S&P 500 + NASDAQ-100 (Wikipedia) via requests + StringIO; YAML export + DB upsert.
+   - Normalizes BRK.B→BRK-B, BF.B→BF-B for yfinance.
+
+────────────────────────────── RUNTIME COMMANDS ────────────────────────────────
+# Refresh universes (write YAML + upsert)
+make tickers-refresh
+
+# Run ETL from DB (no universe filter; optional --limit)
+make etl-db
+# or:
+docker compose run --rm etljob python -m app.etl.run_etl --limit 0
+
+# Quick inspection
+docker compose exec db psql -U postgres -d finance -c "\dt+"
+docker compose exec db psql -U postgres -d finance -c "SELECT COUNT(*) FROM prices;"
+
+──────────────────────────── KEY CODE SNIPPETS (CANON) ─────────────────────────
+A) DB-first run_etl.py (active)
+- Loads tickers from DB by default; file override optional.
+- Calls fetch_prices → compute_all_signals → reconstitute_and_rebalance
+
+B) Tidy (concept)
+if isinstance(df.columns, pd.MultiIndex):
+    # normalize to (ticker, field)
+    if any(x in {"Open","High","Low","Close","Adj Close","Volume"} for x in {c[0] for c in df.columns}):
+        df = df.swaplevel(0,1,axis=1)
+    df.columns = pd.MultiIndex.from_tuples(df.columns, names=["ticker","field"])
+    long = df.stack(level="ticker", future_stack=True).rename_axis(["date","ticker"]).reset_index()
+    long.columns = [c.lower() for c in long.columns]
+    if "close" not in long and "adj close" in long: long["close"] = long["adj close"]
+    tidy = long[["date","ticker","open","high","low","close","volume"]]
+    tidy = tidy.dropna(subset=[c for c in ("close","volume") if c in tidy.columns], how="all")
+
+C) Upsert tickers (SQLAlchemy)
+from sqlalchemy import text, bindparam
+from sqlalchemy.dialects.postgresql import ARRAY, VARCHAR
+stmt = text("""
+INSERT INTO tickers(ticker)
+SELECT UNNEST(:tickers)
+ON CONFLICT (ticker) DO NOTHING
+""").bindparams(bindparam("tickers", type_=ARRAY(VARCHAR())))
+conn.execute(stmt, {"tickers": tickers})
+
+D) tickers_sources.py (highlights)
+- requests + pd.read_html(StringIO) for Wikipedia (S&P500 + NASDAQ-100)
+- YAML out: app/etl/tickers.yaml with keys {sp500, nasdaq100, us_core}
+- --db upserts combined list into tickers
+
+──────────────────────────── SANITY QUERIES (KEEP HANDY) ──────────────────────
+-- Row counts
+SELECT (SELECT COUNT(*) FROM tickers) AS tickers,
+       (SELECT COUNT(*) FROM prices)  AS prices,
+       (SELECT COUNT(*) FROM signals) AS signals,
+       (SELECT COUNT(*) FROM index_definitions) AS index_defs,
+       (SELECT COUNT(*) FROM index_history) AS index_hist;
+
+-- Prices coverage
+SELECT MIN(date) AS first, MAX(date) AS last, COUNT(DISTINCT date) AS days, COUNT(DISTINCT ticker) AS nt FROM prices;
+
+-- Nulls
+SELECT SUM((open IS NULL)::int) null_open, SUM((high IS NULL)::int) null_high,
+       SUM((low IS NULL)::int) null_low,  SUM((close IS NULL)::int) null_close,
+       SUM((volume IS NULL)::int) null_volume FROM prices;
+
+-- Index history coverage
+SELECT id.slug, COUNT(h.*) AS days, MIN(h.date) AS first, MAX(h.date) AS last,
+       COUNT(*) FILTER (WHERE h.ret_daily IS NULL) AS null_rets
+FROM index_definitions id LEFT JOIN index_history h ON h.index_id = id.id
+GROUP BY id.slug ORDER BY id.slug;
+
+-- Latest snapshot per index
+SELECT id.slug, h.date, h.level, h.ret_daily
+FROM index_definitions id
+JOIN LATERAL (
+  SELECT * FROM index_history WHERE index_id = id.id ORDER BY date DESC LIMIT 1
+) h ON TRUE ORDER BY id.slug;
+
+────────────────────── NEXT: CUSTOM INDICES / “ETF” WORKFLOW ───────────────────
+We will design rule-driven indices and write daily levels + returns.
+
+A) Define indices
+- Use index_definitions.rules JSONB to store:
+  {
+    "universe": "all",
+    "select": "top", "by": "m_score", "n": 25,
+    "caps": {"sector": 0.35, "ticker": 0.10},
+    "floors": {"dollar_vol": 0},
+    "weight": "equal",
+    "rebalance": "monthly", "reconst": "monthly",
+    "holdings_min_days": 20
+  }
+
+B) Reconstitution + rebalance (backend/app/etl/rebalance_indices.py exists)
+- Reconstitution (per schedule): choose constituents via signals snapshot at cutoff.
+- Rebalance: compute weights (equal/capped/etc.), compute index level & daily ret:
+  level_t = level_{t-1} * (1 + Σ w_i * ret_i_t)
+- Persist: index_history(index_id, date, level, ret_daily)
+
+C) Constituents (optional table if needed later)
+- index_constituents(id SERIAL PK, ticker, first_date, last_date, meta JSONB)
+- index_membership(index_id, constituent_id, start_date, end_date, weight_init, rank)
+
+D) Validation
+- Check Σ weights ≈ 1.0 at each rebalance date.
+- Track turnover, #names, sector caps (if sector data added).
+
+E) Ops
+- Add Make targets to run scheduled monthly reconst/rebalance.
+- Expose latest holdings + level on API for frontend.
+
+──────────────────────────────── QUICK START CHECKLIST ─────────────────────────
+[ ] make tickers-refresh          # YAML + DB upsert
+[ ] make etl-db                   # prices → signals → index levels
+[ ] Verify sanity queries         # counts & latest dates
+[ ] Add/confirm an index_def (slug, rules JSONB)
+[ ] Run reconstitute_and_rebalance(asof=TODAY) and check index_history
+[ ] Iterate rules (select/by/n/weight), re-run, compare levels
+
+— End of export —
+
