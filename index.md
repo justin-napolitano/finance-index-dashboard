@@ -1,12 +1,28 @@
 ---
-slug: "github-finance-index-dashboard"
-title: "finance-index-dashboard"
-repo: "justin-napolitano/finance-index-dashboard"
-githubUrl: "https://github.com/justin-napolitano/finance-index-dashboard"
-generatedAt: "2025-11-23T08:56:03.370262Z"
-source: "github-auto"
+slug: github-finance-index-dashboard
+title: 'Finance Index Dashboard: Architecture, ETL, API, and Frontend Overview'
+repo: justin-napolitano/finance-index-dashboard
+githubUrl: https://github.com/justin-napolitano/finance-index-dashboard
+generatedAt: '2025-11-23T08:56:03.370262Z'
+source: github-auto
+summary: >-
+  Technical overview of a finance index dashboard covering data ingestion, signal computation, index
+  rebalancing, API design, database schema, and frontend implementation.
+tags:
+  - finance
+  - etl-pipeline
+  - fastapi
+  - react
+  - postgresql
+  - docker
+seoPrimaryKeyword: finance index dashboard
+seoSecondaryKeywords:
+  - etl pipeline
+  - index rebalancing
+  - fastapi api
+  - react frontend
+seoOptimized: true
 ---
-
 
 # Finance Index Dashboard: Technical Overview and Implementation Notes
 
