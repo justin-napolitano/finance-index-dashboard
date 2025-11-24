@@ -22,6 +22,13 @@ seoSecondaryKeywords:
   - fastapi api
   - react frontend
 seoOptimized: true
+topicFamily: datascience
+topicFamilyConfidence: 0.95
+topicFamilyNotes: >-
+  The post focuses extensively on data ingestion, ETL pipelines, signal computations, database
+  management, and visualization of financial data, which aligns closely with the 'Datascience'
+  category and its description. The slug 'github-finance-index-dashboard' also appears as an example
+  slug in this family, reinforcing the match.
 ---
 
 # Finance Index Dashboard: Technical Overview and Implementation Notes
@@ -97,3 +104,4 @@ Docker Compose orchestrates the multi-container setup including the database, ba
 This project integrates financial data ingestion, signal computation, index management, and visualization into a cohesive system. It balances practical engineering concerns such as containerization, schema migration, and data integrity with domain-specific logic for financial indices. The modular design facilitates ongoing extension and maintenance.
 
 This document should serve as a reference for understanding the system's components, data flows, and operational procedures when revisiting the project.
+
