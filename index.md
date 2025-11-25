@@ -1,13 +1,13 @@
 ---
 slug: github-finance-index-dashboard
-title: 'Finance Index Dashboard: Architecture, ETL, API, and Frontend Overview'
+title: Technical Overview of the Finance Index Dashboard Project
 repo: justin-napolitano/finance-index-dashboard
 githubUrl: https://github.com/justin-napolitano/finance-index-dashboard
 generatedAt: '2025-11-23T08:56:03.370262Z'
 source: github-auto
 summary: >-
-  Technical overview of a finance index dashboard covering data ingestion, signal computation, index
-  rebalancing, API design, database schema, and frontend implementation.
+  Explore the architecture, data ingestion, and implementation details of the
+  Finance Index Dashboard for dynamic financial indices.
 tags:
   - finance
   - etl-pipeline
@@ -15,20 +15,31 @@ tags:
   - react
   - postgresql
   - docker
-seoPrimaryKeyword: finance index dashboard
+  - postgres
+  - next.js
+  - etl
+  - financial data
+  - api design
+seoPrimaryKeyword: finance index dashboard implementation
 seoSecondaryKeywords:
-  - etl pipeline
+  - financial data ingestion
+  - ETL pipeline
   - index rebalancing
-  - fastapi api
-  - react frontend
+  - API design
+  - PostgreSQL schema
+  - frontend visualization
+  - Docker Compose
 seoOptimized: true
 topicFamily: datascience
 topicFamilyConfidence: 0.95
 topicFamilyNotes: >-
-  The post focuses extensively on data ingestion, ETL pipelines, signal computations, database
-  management, and visualization of financial data, which aligns closely with the 'Datascience'
-  category and its description. The slug 'github-finance-index-dashboard' also appears as an example
-  slug in this family, reinforcing the match.
+  The post focuses extensively on data ingestion, ETL pipelines, signal
+  computations, database management, and visualization of financial data, which
+  aligns closely with the 'Datascience' category and its description. The slug
+  'github-finance-index-dashboard' also appears as an example slug in this
+  family, reinforcing the match.
+kind: project
+id: github-finance-index-dashboard
 ---
 
 # Finance Index Dashboard: Technical Overview and Implementation Notes
