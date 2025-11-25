@@ -7,8 +7,8 @@ githubUrl: https://github.com/justin-napolitano/finance-index-dashboard
 generatedAt: '2025-11-24T21:34:45.216Z'
 source: github-auto
 summary: >-
-  Explore a Python application for dynamic financial indices, featuring ETL
-  pipelines, REST API, and a React frontend for visualization.
+  Explore a Python application for dynamic financial indices, featuring ETL pipelines, REST API, and
+  a React frontend for visualization.
 tags:
   - python
   - fastapi
@@ -27,8 +27,8 @@ seoSecondaryKeywords:
   - react dashboard
   - dockerized setup
 seoOptimized: true
-topicFamily: null
-topicFamilyConfidence: null
+topicFamily: datascience
+topicFamilyConfidence: 0.9
 kind: project
 entryLayout: project
 showInProjects: true
@@ -135,3 +135,4 @@ finance-index-dashboard/
 ---
 
 *Note: Some assumptions were made regarding missing documentation based on code and file structure.*
+
