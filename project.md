@@ -1,14 +1,14 @@
 ---
 slug: github-finance-index-dashboard
 id: github-finance-index-dashboard
-title: 'Finance Index Dashboard: Python ETL and Visualization Tool'
+title: 'Finance Index Dashboard: A Python-Based Financial Tool'
 repo: justin-napolitano/finance-index-dashboard
 githubUrl: https://github.com/justin-napolitano/finance-index-dashboard
 generatedAt: '2025-11-24T21:34:45.216Z'
 source: github-auto
 summary: >-
-  Explore a Python-based finance index dashboard with ETL capabilities, REST
-  API, and a React frontend for dynamic financial data visualization.
+  Explore a Python application for dynamic financial indices, featuring ETL
+  pipelines, REST API, and a React frontend for visualization.
 tags:
   - python
   - fastapi
@@ -18,13 +18,14 @@ tags:
   - next.js
   - etl
   - data visualization
+  - financial data
 seoPrimaryKeyword: finance index dashboard
 seoSecondaryKeywords:
+  - financial data visualization
   - python financial application
-  - etl pipeline for finance
-  - react financial dashboard
-  - fastapi rest api
-  - dockerized web app
+  - etl pipeline
+  - react dashboard
+  - dockerized setup
 seoOptimized: true
 topicFamily: null
 topicFamilyConfidence: null
